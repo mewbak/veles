@@ -69,6 +69,7 @@ builders['msvc2015_64'] = { node('windows'){
     def version = 'msvc2015_64'
     ws(getWorkspace("")){
       timestamps {
+        def workspace_name = pwd();
         stage('checkout windows msvc2015 x64') {
           try {
             checkout scm
@@ -86,13 +87,25 @@ builders['msvc2015_64'] = { node('windows'){
                 def generator = "Visual Studio 14 2015"
                 def vcredist_binary = "vcredist_x64.exe"
                 def cpack_generator = "ZIP"
+                bat(script: "echo TMP=%TMP%", returnStatus: true)
+                bat(script: "echo TEMP=%TEMP%", returnStatus: true)
                 withEnv(["PATH+QT=${env.QT}\\Tools\\${version}\\bin;${env.QT}\\5.7\\${version}\\bin",
                          "PATH+CMAKE=${env.CMAKE}\\bin",
                          "CMAKE_PREFIX_PATH+QT=${env.QT}\\5.7\\${version}",
                          "GOOGLETEST_DIR=${tool 'googletest'}",
                          "EMBED_PYTHON_ARCHIVE_PATH=${tool 'embed-python-64'}",
-                         "VCINSTALLDIR=${env.VS}\\VC\\"
+                         "VCINSTALLDIR=${env.VS}\\VC\\",
+                          "TMP=${workspace_name}\\tmp",
+                          "TEMP=${workspace_name}\\tmp",
+                          "TEMPDIR=${workspace_name}\\tmp",
+                          "_MSPDBSRV_ENDPOINT_=${workspace_name}\\tmp\\db",
+                          "A=B"
                          ]){
+                  bat(script: "md %TEMP%", returnStatus: true)
+                  bat(script: "set", returnStatus: true)
+                  bat(script: """"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\bin\\amd64\\mspdbsrv.exe" -start -spawn""", returnStatus: true)
+                  //bat(script: "echo VCINSTALLDIR=%VCINSTALLDIR%", returnStatus: true)
+                  //bat(script: "mspdbsrv.exe -start -spawn", returnStatus: true)
                   if(version.contains("64")){
                     generator = "${generator} Win64"
                   }
@@ -109,6 +122,7 @@ builders['msvc2015_64'] = { node('windows'){
                     bat script: "type lint_errors_and_warnings.txt"
                     bat script: "cpack -D CPACK_PACKAGE_FILE_NAME=veles-${version} -G \"${cpack_generator}\" -C ${buildConfiguration}"
                   }
+                  bat(script: """"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\bin\\amd64\\mspdbsrv.exe" -stop""", returnStatus: true)
                   junit allowEmptyResults: true, keepLongStdio: true, testResults: '**/results.xml'
                   step([$class: 'ArtifactArchiver', artifacts: "build_${version}/veles-${version}.*", fingerprint: true])
                   step([$class: 'WarningsPublisher',
@@ -132,6 +146,7 @@ builders['msvc2015_64'] = { node('windows'){
                   bat(script: "rd /s /q build_${version}", returnStatus: true)
                 }
               }  catch (error) {
+                bat(script: "mspdbsrv.exe -stop", returnStatus: false)
                 post_stage_failure(env.JOB_NAME, "windows-msvc2015-x64", env.BUILD_ID, env.BUILD_URL)
                 bat script: "type build_${version}\\*errors_and_warnings.txt"
                 throw error
@@ -161,6 +176,8 @@ builders['msvc2015'] = {node('windows'){
     def version = "msvc2015"
     ws(getWorkspace("")){
       timestamps {
+        def workspace_name = pwd();
+        dir ('tmp') {}
         try {
           stage('windows msvc2015 x86') {
             checkout scm
@@ -173,7 +190,15 @@ builders['msvc2015'] = {node('windows'){
                      "CMAKE_PREFIX_PATH+QT=${env.QT}\\5.7\\${version}",
                      "GOOGLETEST_DIR=${tool 'googletest'}",
                      "EMBED_PYTHON_ARCHIVE_PATH=${tool 'embed-python-32'}",
-                     "VCINSTALLDIR=${env.VS}\\VC\\"]){
+                     "VCINSTALLDIR=${env.VS}\\VC\\",
+                     "TMP=${workspace_name}\\tmp",
+                     "TEMP=${workspace_name}\\tmp",
+                     "TEMPDIR=${workspace_name}\\tmp", 
+                     "_MSPDBSRV_ENDPOINT_=${workspace_name}\\tmp\\db"
+                  ]){
+              bat(script: "md %TEMP%", returnStatus: true)
+              bat(script: """"C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall" x86""", returnStatus: true)
+              bat(script: "mspdbsrv.exe -start -spawn", returnStatus: true)
               if(version.contains("64")){
                 generator = "${generator} Win64"
               }
@@ -187,12 +212,14 @@ builders['msvc2015'] = {node('windows'){
                 bat script: "cmake --build . --config ${buildConfiguration} -- /maxcpucount:8"
                 bat script: "cpack -D CPACK_PACKAGE_FILE_NAME=veles-${version} -G \"${cpack_generator}\" -C ${buildConfiguration}"
               }
+              bat(script: "mspdbsrv.exe -stop")
               junit allowEmptyResults: true, keepLongStdio: true, testResults: '**/results.xml'
               step([$class: 'ArtifactArchiver', artifacts: "build_${version}/veles-${version}.*", fingerprint: true])
               bat(script: "rd /s /q build_${version}", returnStatus: true)
             }
           }
         } catch (error) {
+          bat(script: "mspdbsrv.exe -stop")
           post_stage_failure(env.JOB_NAME, "windows-msvc2015-x86", env.BUILD_ID, env.BUILD_URL)
           throw error
         }
